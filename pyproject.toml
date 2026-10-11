@@ -1,0 +1,28 @@
+[project]
+name = "potpisi-pdf"
+version = "1.0.0"
+description = "Lokalno potpisivanje PDF-a karticom preko PKCS#11 modula (nesluzbeni alat)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "ngarafol" }]
+keywords = ["pdf", "signature", "pkcs11", "pades", "eidas", "macos", "linux", "windows"]
+dependencies = [
+    "pyHanko[opentype,pkcs11]>=0.37,<0.38",
+    "pillow>=10,<13",
+    "pypdfium2>=4,<6",
+    "pypdf>=5,<7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.urls]
+Documentation = "README.md"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+# Napomena: skripte su samostalne datoteke (potpisi-pdf.py / potpisi-gui.py) s crticom u
+# imenu, pa se ne instaliraju kao Python moduli. Instalacija je opisana u README-u.

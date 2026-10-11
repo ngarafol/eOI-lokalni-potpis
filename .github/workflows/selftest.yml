@@ -1,0 +1,49 @@
+name: self-test
+
+# Provjera da alat radi na svim platformama BEZ kartice (softverski certifikat).
+# Kartica se ne moze testirati u CI-ju (nema citaca ni AKD middlewarea).
+
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  self-test:
+    name: ${{ matrix.os }} · py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Instaliraj ovisnosti
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: tkinter (samo Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq python3-tk
+
+      - name: Testovi (bez kartice)
+        run: |
+          pip install pytest
+          pytest -q tests/
+
+      - name: Sintaksa GUI-ja (tkinter nije potreban)
+        run: python -c "import ast; ast.parse(open('potpisi-gui.py', encoding='utf-8').read()); print('GUI sintaksa OK')"
+
+      - name: Self-test bez vremenskog ziga (bez mreze)
+        run: python potpisi-pdf.py --self-test --no-tsa
+
+      - name: Self-test s javnim vremenskim zigom
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+        run: python potpisi-pdf.py --self-test
+
+      - name: Pomoc se ispisuje
+        run: python potpisi-pdf.py --help

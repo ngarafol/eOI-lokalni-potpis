@@ -1,0 +1,4 @@
+pyHanko[opentype,pkcs11]>=0.37,<0.38
+pillow>=10,<13
+pypdfium2>=4,<6
+pypdf>=5,<7
