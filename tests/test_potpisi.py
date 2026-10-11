@@ -881,3 +881,44 @@ def test_provjera_radi_i_bez_akd_middlewarea(tmp_path, monkeypatch):
                       pp._auto_box(pp._page_size(str(src), 1)), None)
     rows2, _n2, _note2 = pp.signature_summary(str(out), trust=str(tmp_path / "root.pem"))
     assert rows2 and rows2[0].get("intact") and rows2[0].get("valid"), rows2
+
+
+def test_der_se_reze_po_duzini_ne_po_nulama():
+    """Regresija (puklo na Windows CI-ju): zadnji bajt DER-a smije biti 0x00.
+
+    Prije se koristio rstrip(b"\\x00") pa je potpis kojem zadnji bajt slucajno bude 0x00
+    (1/256 slucajeva) ostao 1 bajt kraci -> asn1crypto 'Insufficient data'.
+    """
+    # SEQUENCE, kratka forma, zadnji bajt je 0x00
+    short = b"\x30\x03\x02\x01\x00"
+    assert pp._der_object(short + b"\x00" * 10) == short
+    assert pp._der_object(short) == short
+    # duga forma duzine (0x81): SEQUENCE len=3 -> INTEGER 0 (zadnji bajt je 0x00)
+    long_form = b"\x30\x81\x03\x02\x01\x00"
+    assert pp._der_object(long_form + b"\x00" * 8) == long_form
+    # ne-DER ulaz se vraca nepromijenjen; prekratak/neispravan takodjer
+    assert pp._der_object(b"nije der") == b"nije der"
+    assert pp._der_object(b"\x30") == b"\x30"
+    assert pp._der_object(b"\x30\xff\x01") == b"\x30\xff\x01"
+
+
+def test_legacy_potpis_kojeg_der_zavrsava_nulom(tmp_path):
+    """End-to-end regresija: DER kojem je zadnji bajt 0x00 (1/256) mora se ispravno procitati."""
+    path = _legacy_pdf(tmp_path)
+    data = bytearray(path.read_bytes())
+    # nadji /Contents <hex> i procitaj DER (po zaglavlju, ne po nulama)
+    start = data.index(b"/Contents <") + len(b"/Contents <")
+    end = data.index(b">", start)
+    der = pp._der_object(bytes.fromhex(data[start:end].decode()))
+    assert len(der) > 10
+    # zadnji bajt DER-a postavi na 0x00 (simulira potpis koji zavrsava nulom)
+    pos = start + 2 * (len(der) - 1)
+    data[pos:pos + 2] = b"00"
+    path.write_bytes(bytes(data))
+
+    rows, _n, _note = pp.signature_summary(str(path), trust=str(tmp_path / "root.pem"))
+    row = next(r for r in rows if r.get("field") == "Signature1")
+    # bitno: NE smije biti "potpis nije citljiv" (prije je ovdje pukao asn1crypto)
+    assert "warn" not in row and "error" not in row, row
+    assert row.get("intact") is True, row       # dokument nije mijenjan
+    assert row.get("valid") is False, row       # ali potpis je diran -> ne valja

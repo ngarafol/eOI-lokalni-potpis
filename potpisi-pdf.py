@@ -1197,6 +1197,26 @@ def _raw_sig_objects(path: str) -> list[tuple[str, object]]:
     return out
 
 
+def _der_object(data: bytes) -> bytes:
+    """Izrezi tocno jedan DER objekt iz /Contents (ostatak su nule za padding).
+
+    NE koristiti rstrip(b"\x00"): ako zadnji bajt DER-a (npr. RSA potpis) slucajno bude 0x00,
+    to bi odrezalo bajt i asn1crypto bi pao ("Insufficient data"). Zato se duzina cita iz
+    zaglavlja (SEQUENCE: 0x30, kratka ili duga forma duzine).
+    """
+    if len(data) < 2 or data[0] != 0x30:
+        return data
+    first = data[1]
+    if first < 0x80:
+        total = 2 + first
+    else:
+        n = first & 0x7F
+        if n > 4 or len(data) < 2 + n:
+            return data
+        total = 2 + n + int.from_bytes(data[2:2 + n], "big")
+    return data[:total] if 0 < total <= len(data) else data
+
+
 def _legacy_sha1_verify(path: str, sig_obj) -> dict:
     """Provjeri stari profil adbe.pkcs7.sha1 (SHA-1, bez signed attributes).
 
@@ -1222,7 +1242,7 @@ def _legacy_sha1_verify(path: str, sig_obj) -> dict:
         data = f.read()
     content = data[byte_range[0]:byte_range[0] + byte_range[1]] + \
         data[byte_range[2]:byte_range[2] + byte_range[3]]
-    cms = a_cms.ContentInfo.load(bytes(contents).rstrip(b"\x00"))
+    cms = a_cms.ContentInfo.load(_der_object(bytes(contents)))
     sd = cms["content"]
     signer_info = sd["signer_infos"][0]
     encap = sd["encap_content_info"]["content"].native
