@@ -145,7 +145,10 @@ def test_format_summary_prazan_i_greska():
 
 
 def test_first_existing():
-    assert pp._first_existing(["/nema-o-ovoga", "/etc/hosts"]) == "/etc/hosts"
+    # portable: /etc/hosts ne postoji na Windowsima (zato je CI tamo padao)
+    import sys
+
+    assert pp._first_existing(["/nema-o-ovoga", sys.executable]) == sys.executable
     assert pp._first_existing(["/nema-o-ovoga"]) is None
 
 

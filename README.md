@@ -85,6 +85,10 @@ Pečat je slika (isti izgled u svim preglednicima) i sadrži, po veličini:
 3. **`potpisano s eOI · <vrijeme>`** — manje od CN linije, vrijeme je u istom redu
    (za certifikate koji nisu eOI piše `potpisano lokalno`).
 
+Engleska varijanta sučelja: [primjer/potpis-primjer-en.png](primjer/potpis-primjer-en.png) ·
+uvećani pečat: [primjer/potpis-primjer-zoom.png](primjer/potpis-primjer-zoom.png).
+Sintetički dokument za testiranje: [primjer/primjer-racun.pdf](primjer/primjer-racun.pdf).
+
 Ako nema upotrebljivog sistemskog fonta, pečat se **ne crta** (potpis je tada nevidljiv) —
 na Linuxu instaliraj `fonts-dejavu-core`.
 
