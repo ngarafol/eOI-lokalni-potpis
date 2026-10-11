@@ -1055,18 +1055,59 @@ def _apply_offline(args):
     return args
 
 
-def _vc(trust: str, fetching: bool = False, local_roots: bool | None = None):
+def _load_cert_file(path: str):
+    """PEM ili DER certifikat s diska."""
     import asn1crypto.pem
     from asn1crypto import x509
+
+    with open(path, "rb") as f:
+        data = f.read()
+    try:
+        return x509.Certificate.load(asn1crypto.pem.unarmor(data)[2])  # PEM
+    except Exception:  # noqa: BLE001
+        return x509.Certificate.load(data)  # DER (.cer na Windowsima)
+
+
+def _akd_certs() -> tuple[list, list]:
+    """(korijeni, ostali) iz AKD mape - prazno ako mapa ne postoji (npr. bez middlewarea)."""
+    if not CA_DIR or not os.path.isdir(CA_DIR):
+        return [], []
+    roots, others = [], []
+    for path in sorted(
+        glob.glob(os.path.join(CA_DIR, "*.pem"))
+        + glob.glob(os.path.join(CA_DIR, "*.cer"))
+        + glob.glob(os.path.join(CA_DIR, "*.crt"))
+    ):
+        if "TEST" in os.path.basename(path):
+            continue
+        try:
+            cert = _load_cert_file(path)
+        except Exception:  # noqa: BLE001
+            continue
+        (roots if "root" in os.path.basename(path).lower() else others).append(cert)
+    return roots, others
+
+
+def _legacy_chain_context():
+    """Trust za STARI (npr. bankovni) profil: sistemski korijeni, plus AKD ako postoje.
+
+    Ne zahtijeva AKD middleware - vazno jer se bankovni potpisi lancaju na javne korijene.
+    """
     from pyhanko_certvalidator import ValidationContext
 
-    def load(path: str):
-        with open(path, "rb") as f:
-            data = f.read()
-        try:
-            return x509.Certificate.load(asn1crypto.pem.unarmor(data)[2])  # PEM
-        except Exception:  # noqa: BLE001
-            return x509.Certificate.load(data)  # DER (.cer na Windowsima)
+    akd_roots, akd_others = _akd_certs()
+    return ValidationContext(
+        trust_roots=[*_system_roots(), *akd_roots],
+        other_certs=akd_others,
+        allow_fetching=False,
+        revocation_mode="soft-fail",
+    )
+
+
+def _vc(trust: str, fetching: bool = False, local_roots: bool | None = None):
+    from pyhanko_certvalidator import ValidationContext
+
+    load = _load_cert_file
 
     trust_path = trust if os.path.isabs(trust) else os.path.join(CA_DIR, trust)
     if not CA_DIR and not os.path.isabs(trust):
@@ -1215,11 +1256,11 @@ def _legacy_sha1_verify(path: str, sig_obj) -> dict:
 
     others = [c for c in certs if c is not signer_cert]
     try:
-        # lanac gradimo iz certifikata u PDF-u + LOKALNIH korijena (bez mreze)
-        vc = _vc("AKDCARoot.pem", fetching=False, local_roots=True)
-        asyncio.run(CertificateValidator(signer_cert, others, vc).async_validate_path())
+        # lanac: certifikati iz PDF-a + SISTEMSKI korijeni (bez mreze, bez AKD middlewarea)
+        asyncio.run(CertificateValidator(signer_cert, others,
+                                        _legacy_chain_context()).async_validate_path())
         out["trusted"], out["chain_error"] = True, None
-    except Exception as exc:  # noqa: BLE001
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 - SystemExit nije Exception!
         out["trusted"], out["chain_error"] = False, f"{type(exc).__name__}: {str(exc)[:90]}"
     return out
 
@@ -1278,7 +1319,7 @@ def signature_summary(path: str, trust: str = "AKDCARoot.pem") -> tuple[list[dic
                         + ("" if res["covers_whole"] else
                            " + " + T("dokument ima izmjena nakon potpisa")),
                     ))
-                except Exception as exc:  # noqa: BLE001
+                except (Exception, SystemExit) as exc:  # noqa: BLE001
                     rows.append(dict(field=fld, warn=(
                         f"{T('potpis nije citljiv')} "
                         f"({str(obj.get('/SubFilter') or '?').lstrip('/')}): "
@@ -1401,58 +1442,59 @@ def cmd_verify(args) -> int:
             if str(obj.get("/SubFilter") or "") == "/adbe.pkcs7.sha1":
                 try:
                     legacy.append((fld, _legacy_sha1_verify(path, obj)))
-                except Exception as exc:  # noqa: BLE001
+                except (Exception, SystemExit) as exc:  # noqa: BLE001
                     legacy.append((fld, {"error": f"{type(exc).__name__}: {str(exc)[:90]}"}))
     if not sigs and not legacy:
         note = _unreadable_note(path, set())
         print(f"{T('UPOZORENJE')} {note}" if note else f"{T('nema potpisa u')} {path}")
         return 1
-    with _quiet_pyhanko(), open(path, "rb") as f:
-        sigs = list(PdfFileReader(f).embedded_signatures)
-        vc = _vc(args.trust)  # potpisnik: samo AKD korijeni
-        ts_vc = _vc(args.trust, fetching=True)  # TSA lanac: + sistemski korijeni
-        for sig in sigs:
-            if _sig_type(sig) == "/DocTimeStamp":
-                ts_st = validate_pdf_timestamp(sig, ts_vc)
-                print(f"  {T('dokument-timestamp')}: {getattr(ts_st, 'timestamp', '?')}  "
-                      f"trusted={ts_st.trusted}  "
-                      f"{T('pokriva:')} {getattr(ts_st.coverage, 'name', ts_st.coverage)}")
-                print(f"  {T('stanje:')}")
-                for ln in _state_lines(ts_st.summary()):
+    if sigs:  # AKD trust gradimo samo ako ima normalnih potpisa (legacy ne treba middleware)
+        with _quiet_pyhanko(), open(path, "rb") as f:
+            sigs = list(PdfFileReader(f).embedded_signatures)
+            vc = _vc(args.trust)  # potpisnik: samo AKD korijeni
+            ts_vc = _vc(args.trust, fetching=True)  # TSA lanac: + sistemski korijeni
+            for sig in sigs:
+                if _sig_type(sig) == "/DocTimeStamp":
+                    ts_st = validate_pdf_timestamp(sig, ts_vc)
+                    print(f"  {T('dokument-timestamp')}: {getattr(ts_st, 'timestamp', '?')}  "
+                          f"trusted={ts_st.trusted}  "
+                          f"{T('pokriva:')} {getattr(ts_st.coverage, 'name', ts_st.coverage)}")
+                    print(f"  {T('stanje:')}")
+                    for ln in _state_lines(ts_st.summary()):
+                        print("  " + ln)
+                    continue
+                st = validate_pdf_signature(sig, vc, ts_validation_context=ts_vc)
+                cert = st.signing_cert
+                for ln in (_cert_lines(cert) if cert else [f"  {T('potpisnik:')}  -"]):
                     print("  " + ln)
-                continue
-            st = validate_pdf_signature(sig, vc, ts_validation_context=ts_vc)
-            cert = st.signing_cert
-            for ln in (_cert_lines(cert) if cert else [f"  {T('potpisnik:')}  -"]):
-                print("  " + ln)
-            problem = f"  {T('problem:')} {st.trust_problem_indic.name}" if st.trust_problem_indic else ""
-            print(f"  intact={st.intact} valid={st.valid} trusted={st.trusted}{problem}")
-            mech = getattr(st.pkcs7_signature_mechanism, "native", st.pkcs7_signature_mechanism)
-            print(f"  {T('algoritam:')}  {st.md_algorithm} / {mech}")
-            print(f"  {T('pokriva:')}    {getattr(st.coverage, 'name', st.coverage)}")
-            print(f"  {T('vrijeme:')}    {st.signer_reported_dt}")
-            print(f"  timestamp:  {T('da') if st.timestamp_validity else T('ne')}")
-            print(f"  {T('stanje:')}")
-            for ln in _state_lines(st.summary()):
-                print("  " + ln)
-        for fld, res in legacy:
-            if "error" in res:
-                print(f"  {fld} ({T('stari profil')} adbe.pkcs7.sha1): "
-                      f"{T('UPOZORENJE')} {res['error']}")
-                continue
-            cert = res["signer_cert"]
-            for ln in _cert_lines(cert):
-                print("  " + ln)
-            print(f"  [{T('stari profil')}: adbe.pkcs7.sha1]")
-            print(f"  intact={res['intact']} valid={res['valid']} trusted={res['trusted']}"
-                  + (f"  {T('problem:')} {res['chain_error']}" if res.get("chain_error") else ""))
-            print(f"  {T('algoritam:')}  sha1 / rsassa_pkcs1v15")
-            print(f"  {T('pokriva:')}    " + (T("cijeli dokument") if res["covers_whole"]
-                                              else T("dio dokumenta")))
-            if not res["covers_whole"]:
-                print(f"  {T('UPOZORENJE')}: {T('dokument ima izmjena nakon potpisa')}")
-            print(f"  {T('UPOZORENJE')}: SHA-1, bez signed attributes -> "
-                  f"{T('vrijeme potpisa nije kriptografski zasticeno')}")
+                problem = f"  {T('problem:')} {st.trust_problem_indic.name}" if st.trust_problem_indic else ""
+                print(f"  intact={st.intact} valid={st.valid} trusted={st.trusted}{problem}")
+                mech = getattr(st.pkcs7_signature_mechanism, "native", st.pkcs7_signature_mechanism)
+                print(f"  {T('algoritam:')}  {st.md_algorithm} / {mech}")
+                print(f"  {T('pokriva:')}    {getattr(st.coverage, 'name', st.coverage)}")
+                print(f"  {T('vrijeme:')}    {st.signer_reported_dt}")
+                print(f"  timestamp:  {T('da') if st.timestamp_validity else T('ne')}")
+                print(f"  {T('stanje:')}")
+                for ln in _state_lines(st.summary()):
+                    print("  " + ln)
+    for fld, res in legacy:
+        if "error" in res:
+            print(f"  {fld} ({T('stari profil')} adbe.pkcs7.sha1): "
+                  f"{T('UPOZORENJE')} {res['error']}")
+            continue
+        cert = res["signer_cert"]
+        for ln in _cert_lines(cert):
+            print("  " + ln)
+        print(f"  [{T('stari profil')}: adbe.pkcs7.sha1]")
+        print(f"  intact={res['intact']} valid={res['valid']} trusted={res['trusted']}"
+              + (f"  {T('problem:')} {res['chain_error']}" if res.get("chain_error") else ""))
+        print(f"  {T('algoritam:')}  sha1 / rsassa_pkcs1v15")
+        print(f"  {T('pokriva:')}    " + (T("cijeli dokument") if res["covers_whole"]
+                                          else T("dio dokumenta")))
+        if not res["covers_whole"]:
+            print(f"  {T('UPOZORENJE')}: {T('dokument ima izmjena nakon potpisa')}")
+        print(f"  {T('UPOZORENJE')}: SHA-1, bez signed attributes -> "
+              f"{T('vrijeme potpisa nije kriptografski zasticeno')}")
     return 0
 
 

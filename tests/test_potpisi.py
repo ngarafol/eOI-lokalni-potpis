@@ -845,3 +845,36 @@ def test_stanje_izbornika_certifikata():
     assert f(dva)[0] == "many" and len(f(dva)[1]) == 2
     # mjesano: jedan potpisni + jedan identifikacijski -> jedan
     assert f(jedan + samo_identifikacijski)[0] == "one"
+
+
+def test_provjera_radi_i_bez_akd_middlewarea(tmp_path, monkeypatch):
+    """Regresija (pukao GitHub CI): bez AKD mape provjera starih potpisa ne smije pasti.
+
+    Na CI-ju (i kod svakoga bez AKD middlewarea) CA_DIR ne postoji; ranije je to bacalo
+    SystemExit (koji nije Exception) izvan try/except pa su testovi padali.
+    """
+    from pypdf import PdfReader, PdfWriter
+    from pyhanko.sign.signers.pdf_signer import PdfSignatureMetadata
+
+    # 1) stari (legacy) potpis mora biti provjerljiv bez AKD mape
+    monkeypatch.setattr(pp, "CA_DIR", str(tmp_path / "nema-middlewarea"))
+    path = _legacy_pdf(tmp_path)
+    rows, _n, _note = pp.signature_summary(str(path), trust=str(tmp_path / "root.pem"))
+    row = next(r for r in rows if r.get("field") == "Signature1")
+    assert row.get("intact") and row.get("valid"), row
+
+    # 2) i potpisivanje/validacija normalnog potpisa radi (trust je apsolutna putanja)
+    src, out = tmp_path / "a.pdf", tmp_path / "a-signed.pdf"
+    w = PdfWriter()
+    w.add_blank_page(width=595, height=842)
+    with open(src, "wb") as f:
+        w.write(f)
+    signer = pp.soft_signer("CI TEST", str(tmp_path / "root.pem"))
+    args = pp.build_parser().parse_args([])
+    args.input, args.out, args.field = str(src), str(out), "Signature1"
+    args = pp._apply_offline(args)
+    pp._sign_document(args, signer, PdfSignatureMetadata(field_name="Signature1",
+                      md_algorithm="sha256", signer_key_usage={"non_repudiation"}),
+                      pp._auto_box(pp._page_size(str(src), 1)), None)
+    rows2, _n2, _note2 = pp.signature_summary(str(out), trust=str(tmp_path / "root.pem"))
+    assert rows2 and rows2[0].get("intact") and rows2[0].get("valid"), rows2
