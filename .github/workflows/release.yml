@@ -1,0 +1,38 @@
+name: release
+
+# GitHub Release se pravi iz taga (v*) ili rucno (Actions -> release -> Run workflow).
+# Biljeske izdanja = CHANGELOG.md (prva verzija je jedina sekcija u njemu).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag za koji se pravi release (npr. v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Napravi GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -e
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG vec postoji - preskacem."
+            exit 0
+          fi
+          gh release create "$TAG" \
+            --title "$TAG - lokalno potpisivanje PDF-a karticom" \
+            --notes-file CHANGELOG.md \
+            --verify-tag
+          echo "Release $TAG je objavljen."
