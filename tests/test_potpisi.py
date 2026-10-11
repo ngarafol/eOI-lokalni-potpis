@@ -629,29 +629,9 @@ def test_okvir_prati_promjenu_broja_redova():
 
 def _cert_za_pecat(*, country="HR", serial="PNOHR-00000000000", issuer_cn="HRIDCA",
                    cn="IVAN HORVAT"):
-    """Certifikat nalik eOI (za test rasporeda pecata)."""
-    from asn1crypto import x509 as a_x509
-    from cryptography import x509 as cx
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from cryptography.x509.oid import NameOID
-
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    attrs = [cx.NameAttribute(NameOID.COMMON_NAME, cn)]
-    if serial:
-        attrs.append(cx.NameAttribute(NameOID.SERIAL_NUMBER, serial))
-    attrs.append(cx.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, "Signature"))
-    if country:
-        attrs.append(cx.NameAttribute(NameOID.COUNTRY_NAME, country))
-    now = datetime.datetime.now(datetime.timezone.utc)
-    cert = (cx.CertificateBuilder()
-            .subject_name(cx.Name(attrs))
-            .issuer_name(cx.Name([cx.NameAttribute(NameOID.COMMON_NAME, issuer_cn)]))
-            .public_key(key.public_key()).serial_number(1)
-            .not_valid_before(now - datetime.timedelta(days=1))
-            .not_valid_after(now + datetime.timedelta(days=30))
-            .sign(key, hashes.SHA256()))
-    return a_x509.Certificate.load(cert.public_bytes(serialization.Encoding.DER))
+    """Certifikat nalik eOI (za test rasporeda pecata) - iz modula."""
+    return pp.soft_signer(cn, country=country, serial=serial, issuer_cn=issuer_cn,
+                          issuer_org="AKD d.o.o.").signing_cert
 
 
 def test_pecat_pise_potpisano_s_eoi_i_vrijeme_u_istom_redu():

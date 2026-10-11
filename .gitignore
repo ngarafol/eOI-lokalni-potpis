@@ -4,4 +4,7 @@ __pycache__/
 .DS_Store
 *-signed.pdf
 postavke.json
+
+# privremeno iz primjer/napravi-snimke.py
+primjer/_demo-*
 *.bundle

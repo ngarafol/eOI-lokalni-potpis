@@ -532,10 +532,13 @@ def _timestamper(args):
     return HTTPTimeStamper(url, https=url.startswith("https"), auth=auth)
 
 
-def soft_signer(cn: str = "SOFT TEST", root_pem: str | None = None):
-    """Samopotpisani certifikat + kljuc (bez kartice): za --self-test i testove.
+def soft_signer(cn: str = "SOFT TEST", root_pem: str | None = None, *,
+                country: str | None = None, serial: str | None = None,
+                issuer_cn: str | None = None, issuer_org: str | None = None):
+    """Samopotpisani certifikat + kljuc (bez kartice): za --self-test, testove i demo snimke.
 
     Ako je zadan `root_pem`, tamo se spremi i PEM certifikata (za --trust u testovima).
+    `country`/`serial`/`issuer_*` sluze da se dobije certifikat nalik eOI (primjer pečata).
     """
     from asn1crypto import keys as a_keys, x509 as a_x509
     from cryptography import x509 as cx
@@ -548,10 +551,23 @@ def soft_signer(cn: str = "SOFT TEST", root_pem: str | None = None):
     import tzlocal
 
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    name = cx.Name([cx.NameAttribute(NameOID.COMMON_NAME, cn)])
+    attrs = [cx.NameAttribute(NameOID.COMMON_NAME, cn)]
+    if serial:
+        attrs.append(cx.NameAttribute(NameOID.SERIAL_NUMBER, serial))
+    if country:
+        attrs.append(cx.NameAttribute(NameOID.COUNTRY_NAME, country))
+    name = cx.Name(attrs)
+    signer_name = name
+    if issuer_cn:
+        issuer_attrs = [cx.NameAttribute(NameOID.COMMON_NAME, issuer_cn)]
+        if issuer_org:
+            issuer_attrs.append(cx.NameAttribute(NameOID.ORGANIZATION_NAME, issuer_org))
+        if country:
+            issuer_attrs.append(cx.NameAttribute(NameOID.COUNTRY_NAME, country))
+        signer_name = cx.Name(issuer_attrs)
     now = datetime.now(tzlocal.get_localzone())
     cert = (
-        cx.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
+        cx.CertificateBuilder().subject_name(name).issuer_name(signer_name).public_key(key.public_key())
         .serial_number(1).not_valid_before(now - timedelta(days=1))
         .not_valid_after(now + timedelta(days=365))
         .add_extension(cx.KeyUsage(digital_signature=True, content_commitment=True,

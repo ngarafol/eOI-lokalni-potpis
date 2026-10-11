@@ -89,6 +89,12 @@ Engleska varijanta sučelja: [primjer/potpis-primjer-en.png](primjer/potpis-prim
 uvećani pečat: [primjer/potpis-primjer-zoom.png](primjer/potpis-primjer-zoom.png).
 Sintetički dokument za testiranje: [primjer/primjer-racun.pdf](primjer/primjer-racun.pdf).
 
+Snimke se generiraju **iz koda** (pa ne mogu odstupiti od njega):
+
+```bash
+.venv/bin/python primjer/napravi-snimke.py    # potpise demo dokument i izveze preglede HR/EN + zoom
+```
+
 Ako nema upotrebljivog sistemskog fonta, pečat se **ne crta** (potpis je tada nevidljiv) —
 na Linuxu instaliraj `fonts-dejavu-core`.
 
