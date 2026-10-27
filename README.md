@@ -67,6 +67,13 @@ mreža, *tko* drži ključ i *prolazi li dokument kroz servis*.
 > briše."* Dakle i kod udaljenog potpisivanja **dokument se ne pohranjuje** trajno — ali, za razliku
 > od ovog alata, **prolazi kroz njihov servis** dok se ne potpiše.
 
+> **Napomena o „Certilia Doc":** to je **drugi proizvod** (upravljanje i pohrana dokumenata, s
+> potpisivanjem i dijeljenjem) — tamo se dokumenti **pohranjuju**, a trajanje zavisi od plana
+> („čuvanje dokumenata N dana" ili trajno), uz brisanje **30 dana nakon isteka pretplate**.
+> Usporedba gore odnosi se na uslugu **AKD ePotpis** (udaljeno potpisivanje), koja dokument ne
+> čuva. Formalne uvjete za Doc nisam mogao javno dohvatiti (traže prijavu), pa je taj dio prema
+> njihovom web sučelju.
+
 > **Kvalificiranost potpisa ne dolazi od alata** — dolazi od certifikata i od toga što je ključ na
 > QSCD-u (kartici). Alat je samo sučelje prema kartici; zato je razina ista kao kod Certilie.
 
