@@ -9,18 +9,56 @@ modula. Dokument i PIN **ne izlaze s računala** — nema clouda, nema uploada, 
 > paketa, koji korisnik sam instalira; sam middleware se ne redistribuira i za njega vrijede
 > AKD-ovi uvjeti.
 
+- [Čemu služi](#čemu-služi)
+- [Usporedba s Certilia](#usporedba-s-certilia-udaljeno-potpisivanje)
 - [Zahtjevi](#zahtjevi)
+- [Da li je sve spremno?](#da-li-je-sve-spremno)
 - [Instalacija](#instalacija)
 - [Brzi početak](#brzi-početak)
 - [CLI opcije](#cli-opcije)
 - [Kartica po operativnom sustavu](#kartica-po-operativnom-sustavu)
 - [Vremenski žig i PAdES-LT](#vremenski-zig-i-pades-lt)
 - [Provjera potpisa i popis potpisa](#provjera-potpisa-i-popis-potpisa)
-- [Provjera platforme (bez kartice)](#provjera-platforme-bez-kartice)
 - [Testovi](#testovi)
 - [Poznata ograničenja](#poznata-ogranicenja)
 - [Privatnost i PIN](#privatnost-i-pin)
 - [Licenca](#licenca)
+
+## Čemu služi
+
+Bez ovog alata potpis PDF-a eOI karticom traži ili komercijalni servis (dokument ode u cloud)
+ili ručno petljanje s više programa. S ovim alatom, u jednoj naredbi (ili kroz GUI) dobiješ:
+
+- PDF potpisan **kvalificiranim certifikatom s tvoje kartice** — ključ i PIN ostaju kod tebe;
+- **vidljivi pečat** (ime, `država · OIB`, `potpisano s eOI · vrijeme`) — vektorski, oštar na
+  svakom zoomu, ~2 KB;
+- **vremenski žig** (RFC 3161) i, kad uvjeti dopuštaju, **PAdES-LT / LTA**;
+- **provjeru** potpisa — i svojih i tuđih (uključujući starije bankovne `adbe.pkcs7.sha1`);
+- sve to **offline** ako želiš (`--offline`) — nijedan bajt ne izlazi s računala.
+
+**Kada NE koristiti:** s telefona, bez kartice/čitača, ili kad ti treba servis s podrškom i
+arhivom — za to postoji Certilia (vidi dolje). Alat je neslužben, nije certificiran proizvod i
+nije povezan s AKD-om; koristi njihov middleware koji sam instaliraš.
+
+## Usporedba s Certilia (udaljeno potpisivanje)
+
+Oba načina daju **istu razinu potpisa (QES)** — razlika je *gdje* potpis nastaje, *kome* treba
+mreža i *tko* drži ključ.
+
+| | **Ovaj alat** (lokalno) | **Certilia** (udaljeno) |
+|---|---|---|
+| Gdje nastaje potpis | na **tvojoj kartici**, u tvom računalu | u **AKD-ovom sustavu** (HSM) |
+| Gdje je privatni ključ | **kod tebe** (kartica) | kod AKD-a |
+| Što odobrava svaki potpis | **PIN na kartici** | autentikacija prema servisu |
+| Što treba za rad | eOI kartica, čitač, AKD middleware | aktivacija/račun i internet; kartica ne mora biti u čitaču |
+| Radi offline | **da** (`--offline`) | ne |
+| Vidljivi pečat | da, vektorski i prilagodljiv | da, njihov izgled |
+| Vremenski žig / LTV | opcionalno (javni TSA ili AKD QTSA) | dio usluge |
+| Cijena / licenca | besplatno, MIT | komercijalna usluga |
+| Kad je bolje | privatnost, offline rad, često potpisivanje vlastitom karticom | nemaš karticu/čitač pri ruci, potpisuješ s telefona, ili želiš servis s podrškom |
+
+> **Kvalificiranost potpisa ne dolazi od alata** — dolazi od certifikata i od toga što je ključ na
+> QSCD-u (kartici). Alat je samo sučelje prema kartici; zato je razina ista kao kod Certilie.
 
 ## Zahtjevi
 
@@ -35,10 +73,33 @@ modula. Dokument i PIN **ne izlaze s računala** — nema clouda, nema uploada, 
 - **Python 3.10+**; za GUI i `tkinter`
 - Čitač kartica (CCID) — radi i ugrađeni i USB čitač
 
+## Da li je sve spremno?
+
+Četiri naredbe, po redu — svaka kaže je li razina ispod spremna:
+
+```bash
+.venv/bin/python potpisi-pdf.py --list                  # 1) vidi li modul i karticu?  (token: AKD eID Card (Signature))
+.venv/bin/python potpisi-pdf.py --check                 # 2) PIN OK, certifikat i ključ dohvaćeni (ne potpisuje)
+.venv/bin/python potpisi-pdf.py --self-test             # 3) modul, CA, font, korijeni za TSA, preview
+.venv/bin/python potpisi-pdf.py ugovor.pdf --offline    # 4) probni potpis bez ijednog mrežnog poziva
+```
+
+Kako čitati `--self-test`: `[OK ]` = radi, `[-- ]` = treba samo za karticu, `[WARN]` = radi ali
+fali npr. font (pečat se tada ne crta).
+
+**Trebaš:** eOI karticu s certifikatom *Signature* (ne *Identification*), čitač kartica (bilo koji
+CCID — ugrađeni ili USB), AKD *Certilia Middleware* za tvoj OS (daje PKCS#11 modul i CA
+certifikate) i Python 3.10+; za GUI još `tkinter`.
+
+**Ne trebaš:** AKD-ov korisnički račun, internet (uz `--offline`), poseban čitač, nikakvu
+registraciju ni slanje dokumenta ikome.
+
+**Ako je nešto na drugom mjestu:** `--lib` / `--ca-dir` (ili `POTPIS_LIB` / `POTPIS_CA_DIR`).
+
 ## Instalacija
 
 ```bash
-git clone <repo> && cd potpisi-pdf
+git clone <repo> && cd eOI-lokalni-potpis
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt        # Windows: .venv\Scripts\pip
 ```
@@ -51,8 +112,8 @@ Dodatno, ovisno o OS-u:
 | **Linux** | `sudo apt install python3-tk fonts-dejavu-core` (GUI + font za pečat) |
 | **Windows** | ništa dodatno (tkinter dolazi s python.org installerom) |
 
-Font treba **samo za vidljivi pečat**; bez njega se koristi ugrađeni bitmap font (ružnije, ali
-potpis je ispravan).
+Font treba **samo za vidljivi pečat**; bez njega se pečat **ne crta** (potpis je ispravan, ali je
+nevidljiv).
 
 ## Brzi početak
 
@@ -78,7 +139,7 @@ CLI:
 
 ### Što piše u vidljivom pečatu
 
-Pečat je slika (isti izgled u svim preglednicima) i sadrži, po veličini:
+Pečat je **vektorski PDF tekst** (isti izgled u svim preglednicima) i sadrži, po veličini:
 
 1. **ime i prezime** potpisnika (CN) — najveće,
 2. **država · OIB** (OIB se čita iz serijskog broja certifikata, npr. `PNOHR-00000000000`),
@@ -99,8 +160,7 @@ Ako nema upotrebljivog sistemskog fonta, pečat se **ne crta** (potpis je tada n
 na Linuxu instaliraj `fonts-dejavu-core`.
 
 Pečat je **vektorski** — pravi PDF tekst s ugrađenim podskupom fonta (ime većim slovima, detalji
-manjim), pa je oštar na svakom zoomu i mali (~2 KB). Slika se koristi samo kao automatska rezerva
-ako font nije upotrebljiv.
+manjim), pa je oštar na svakom zoomu i mali (~2 KB).
 
 > Napomena za programere: da bi to radilo, alat lokalno krpa bug u pyHanku 0.37 — on piše širine
 > CID glifova (`/W`) u *font units* umjesto u tisućinke em, zbog čega preglednici razmaknu slova
@@ -243,15 +303,6 @@ s napomenom `[stari SHA-1 profil (bez žiga)]` i upozorenjem da **vrijeme potpis
 zaštićeno**; ako dokument ima izmjena nakon potpisa, to se također prijavi. U GUI-ju se **popis potpisa** ispisuje
 automatski pri otvaranju dokumenta (polje, potpisnik, vrijeme, valjan/pouzdan, žig) i kaže u koje
 polje ide sljedeći potpis.
-
-## Provjera platforme (bez kartice)
-
-```bash
-.venv/bin/python potpisi-pdf.py --self-test
-```
-
-Ispiše što je našao (PKCS#11 modul, AKD certifikati, font, korijeni za TSA, preview) i na kraju
-`rezultat: radi`. `[-- ]` znači „treba samo za karticu“, `[WARN]` znači „radi, ali fali npr. font“.
 
 ## Testovi
 
