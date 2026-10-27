@@ -132,23 +132,35 @@ def draw_invoice(size, font):
     d.line((W - pad - 230 * K, uy + 38 * K, W - pad, uy + 38 * K), fill=line, width=K)
     t((W - pad - 14 * K, uy + 74 * K), "UKUPNO: 125,00 EUR", 16, True, anchor="ra")
 
-    t((pad, H - pad - 28 * K), "IBAN: HR0000000000000000000", 10, fill=gray)
-    t((pad, H - pad - 12 * K),
-      "Ilustrativni primjer za dokumentaciju - svi podaci su izmišljeni.", 10, fill=gray)
+    # podnozje gore lijevo - pecat ide u donji desni kut
+    t((pad, H - pad - 118 * K), "IBAN: HR0000000000000000000", 10, fill=gray)
+    t((pad, H - pad - 100 * K), "Ilustrativni primjer - svi podaci su izmišljeni.",
+      10, fill=gray)
     return im
 
 
 def make_demo_pdf(font, path: Path):
-    """Nacrtaj A4 račun i spremi ga kao PDF (150 dpi -> 1240x1754 px = 595x842 pt)."""
-    from PIL import Image
+    """Nacrtaj A4 račun i spremi ga kao PDF preko pyHanko writerа.
 
-    a4 = (1240 // K, 1754 // K)  # crtamo u pola, pa K u draw_invoice vrati punu veličinu
-    img = draw_invoice(a4, font).convert("RGB")
-    img.save(path, "PDF", resolution=150)
-    # Pillow u xref upiše "65536" za slobodan objekt (izvan specifikacije); ispravi na 65535
-    # da uzorak bude ispravan i za stroge citace.
-    raw = path.read_bytes().replace(b"0000000000 65536 f", b"0000000000 65535 f")
-    path.write_bytes(raw)
+    Pillowov PDF writer upisuje xref 'generation 65536' (izvan specifikacije) i pdfium na
+    takvom dokumentu ne crta tekst izgleda potpisa - zato PDF gradimo pyHanko writerom.
+    """
+    from pyhanko.pdf_utils import generic as g, layout
+    from pyhanko.pdf_utils.images import PdfImage
+    from pyhanko.pdf_utils.writer import PageObject, PdfFileWriter
+
+    W, H = 595.276, 841.89  # A4 u točkama
+    img = draw_invoice((620, 877), font).convert("RGB")  # 1240x1754 px ~ 150 dpi
+    w = PdfFileWriter()
+    xref = w.add_object(PdfImage(img, writer=w, name="Im0",
+                                 box=layout.BoxConstraints(width=W, height=H)).as_form_xobject())
+    content = w.add_object(g.StreamObject(stream_data=b"q 1 0 0 1 0 0 cm /Im0 Do Q"))
+    page = PageObject(content, [0, 0, W, H],
+                      resources=g.DictionaryObject(
+                          {"/XObject": g.DictionaryObject({"/Im0": xref})}))
+    w.insert_page(page)
+    with open(path, "wb") as f:
+        w.write(f)
     return path
 
 
@@ -162,11 +174,16 @@ def stamp_crop(pdf: Path, box, scale: int = 6):
     im = page.render(scale=scale, draw_annots=True).to_pil().convert("RGB")
     W, H = page.get_width(), page.get_height()
     k = im.width / W
-    m = 8
     x0, y0, x1, y1 = box
-    # u PDF-u je ishodište lijevo-dolje, u slici lijevo-gore
-    return im.crop((int((x0 - m) * k), int((H - y1 - m) * k),
-                    int((x1 + m) * k), int((H - y0 + m) * k)))
+    # uvuci 1.5 pt (izbjegni ostatke sadrzaja uz rub) i nacrtaj svoj okvir
+    v = 1.5
+    crop = im.crop((int((x0 + v) * k), int((H - y1 + v) * k),
+                    int((x1 - v) * k), int((H - y0 - v) * k)))
+    from PIL import ImageDraw
+
+    ImageDraw.Draw(crop).rectangle((0, 0, crop.width - 1, crop.height - 1),
+                                   outline=(0, 0, 0), width=max(int(k * 0.8), 1))
+    return crop
 
 
 def compose(page_img, stamp_img, font, out: Path):
