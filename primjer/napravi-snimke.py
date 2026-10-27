@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-os.environ.setdefault("POTPIS_OFFLINE", "1")  # demo ne treba vremenski zig
+os.environ.pop("POTPIS_OFFLINE", None)  # demo ide s javnim vremenskim zigom
 
 HERE = Path(__file__).resolve().parent
 K = 2  # crtamo u 2x pa smanjimo (ostri rubovi)
@@ -186,6 +186,119 @@ def stamp_crop(pdf: Path, box, scale: int = 6):
     return crop
 
 
+def demo_signer(root_pem: Path):
+    """Demo lanac kao pravi: korijen (CN=HRIDCA) izdaje potpisni certifikat.
+
+    `root_pem` dobije PEM korijena (za --ca-dir / --trust), pa je provjera 'pouzdana'.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from asn1crypto import keys as a_keys, x509 as a_x509
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+    from pyhanko.sign import signers
+    from pyhanko_certvalidator.registry import SimpleCertificateStore
+
+    now = datetime.now(timezone.utc)
+    root_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    root_name = x509.Name([
+        x509.NameAttribute(NameOID.COUNTRY_NAME, "HR"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "AKD d.o.o."),
+        x509.NameAttribute(NameOID.COMMON_NAME, "HRIDCA"),
+    ])
+    root = (x509.CertificateBuilder().subject_name(root_name).issuer_name(root_name)
+            .public_key(root_key.public_key()).serial_number(1)
+            .not_valid_before(now - timedelta(days=1)).not_valid_after(now + timedelta(days=3650))
+            .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+            .add_extension(x509.KeyUsage(True, False, False, False, False, True, True,
+                                         False, False), critical=True)
+            .sign(root_key, hashes.SHA256()))
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([
+        x509.NameAttribute(NameOID.COMMON_NAME, "PRIMJER POTPISNIK"),
+        x509.NameAttribute(NameOID.SERIAL_NUMBER, "PNOHR-00000000000"),
+        x509.NameAttribute(NameOID.COUNTRY_NAME, "HR"),
+    ])
+    leaf = (x509.CertificateBuilder().subject_name(name).issuer_name(root_name)
+            .public_key(key.public_key()).serial_number(2)
+            .not_valid_before(now - timedelta(days=1)).not_valid_after(now + timedelta(days=365))
+            .add_extension(x509.KeyUsage(True, True, False, False, False, False, False,
+                                         False, False), critical=True)
+            .sign(root_key, hashes.SHA256()))
+
+    Path(root_pem).write_bytes(root.public_bytes(serialization.Encoding.PEM))
+    a_root = a_x509.Certificate.load(root.public_bytes(serialization.Encoding.DER))
+    a_leaf = a_x509.Certificate.load(leaf.public_bytes(serialization.Encoding.DER))
+    registry = SimpleCertificateStore()
+    registry.register(a_root)
+    registry.register(a_leaf)
+    return signers.SimpleSigner(
+        signing_cert=a_leaf,
+        signing_key=a_keys.PrivateKeyInfo.load(
+            key.private_bytes(serialization.Encoding.DER,
+                              serialization.PrivateFormat.PKCS8,
+                              serialization.NoEncryption())),
+        cert_registry=registry,
+    )
+
+
+def gui_shot(signed: Path, out: Path, wait_ms: int = 7000) -> bool:
+    """Snimi GUI prozor s otvorenim potpisanim PDF-om (desno: popis i provjera potpisa).
+
+    Demo korijen ide u `--ca-dir` (kao AKDCARoot.pem) da provjera pokaze 'pouzdan'.
+    Trazi desktop sesiju (Tk) i dopustenje za snimanje ekrana; ako ne uspije, vrati False.
+    """
+    import shutil
+    import sys as _sys
+    import tempfile
+    import tkinter as tk
+    from pathlib import Path as _Path
+
+    from PIL import ImageGrab
+
+    try:
+        ca = _Path(tempfile.mkdtemp(prefix="potpis-demo-ca-"))
+        shutil.copy(HERE / "_demo-root.pem", ca / "AKDCARoot.pem")
+        os.environ["POTPIS_CA_DIR"] = str(ca)  # PRIJE ucitavanja modula (CA_DIR se cita pri importu)
+        # snimka iz /tmp - da se na slici ne vidi nicija osobna putanja
+        shot_pdf = _Path("/tmp") / signed.name
+        shutil.copy(signed, shot_pdf)
+        _sys.argv = [str(ROOT / "potpisi-gui.py"), str(shot_pdf), "--ca-dir", str(ca),
+                     "--lang", "hr"]
+        gui = load("potpisi_gui", ROOT / "potpisi-gui.py")
+        root = tk.Tk()
+        app = gui.App(root)
+        root.geometry("1300x880+60+40")
+        app.visible.set(False)  # ovo je prikaz PROVJERE - bez mreze okvira za potpis
+        app.pdf.set(str(shot_pdf))
+        app.load_pdf()
+        # prikaz PROVJERE: bez mreze okvira za odabir mjesta potpisa
+        app.overlay_rects = lambda offset=True: ([], None)
+        app.render()
+        root.attributes("-topmost", True)
+        root.lift()
+        root.after(wait_ms, root.quit)
+        root.mainloop()  # ceka da se ucita preview i popis potpisa
+        app.set_status("provjera potpisa: 1 potpis u dokumentu (vidi popis desno)", "ok")
+        root.update()
+
+        screen = ImageGrab.grab()
+        scale = screen.width / root.winfo_screenwidth()
+        x, y = int(root.winfo_rootx() * scale), int(root.winfo_rooty() * scale)
+        w, h = int(root.winfo_width() * scale), int(root.winfo_height() * scale)
+        img = screen.crop((x, y, x + w, y + h))
+        root.destroy()
+        img.convert("RGB").save(out)
+        shot_pdf.unlink(missing_ok=True)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"  (GUI snimka preskocena: {type(exc).__name__}: {exc})")
+        return False
+
+
 def compose(page_img, stamp_img, font, out: Path):
     """Dokument lijevo, stvarni pečat desno, na toploj podlozi."""
     from PIL import Image, ImageDraw
@@ -227,15 +340,13 @@ def main() -> int:
     from pyhanko.sign.signers.pdf_signer import PdfSignatureMetadata
 
     font = fonts(pp)
-    src, out = HERE / "primjer-racun.pdf", HERE / "_demo-signed.pdf"
+    src, out = HERE / "primjer-racun.pdf", HERE / "primjer-racun-potpisan.pdf"
     if "--keep-doc" not in sys.argv:  # inače zadrži postojeći primjer-racun.pdf
         make_demo_pdf(font, src)
         print("dokument: primjer-racun.pdf")
 
-    signer = pp.soft_signer("PRIMJER POTPISNIK", str(HERE / "_demo-root.pem"),
-                            country="HR", serial="PNOHR-00000000000",
-                            issuer_cn="HRIDCA", issuer_org="AKD d.o.o.")
-    args = pp.build_parser().parse_args([str(src), "--out", str(out), "--offline"])
+    signer = demo_signer(HERE / "_demo-root.pem")
+    args = pp.build_parser().parse_args([str(src), "--out", str(out)])
     args.field = "Signature1"
     box = pp._auto_box(pp._page_size(str(src), 1))
     print("pecаt:")
@@ -243,7 +354,7 @@ def main() -> int:
         print(f"   {scale:.2f}  {text}")
     pp._sign_document(args, signer, PdfSignatureMetadata(
         field_name="Signature1", md_algorithm="sha256",
-        signer_key_usage={"non_repudiation"}), box, None)
+        signer_key_usage={"non_repudiation"}), box, pp._timestamper(args))
 
     from pypdf import PdfReader
 
@@ -267,6 +378,9 @@ def main() -> int:
     zoom.paste(stamp, (pad, pad))
     zoom.save(HERE / "potpis-primjer-zoom.png")
     print("snimka: potpis-primjer-zoom.png")
+
+    if gui_shot(out, HERE / "gui-provjera.png"):
+        print("snimka: gui-provjera.png")
 
     out.unlink(missing_ok=True)
     (HERE / "_demo-root.pem").unlink(missing_ok=True)

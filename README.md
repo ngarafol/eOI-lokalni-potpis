@@ -163,7 +163,8 @@ Pečat je **vektorski PDF tekst** (isti izgled u svim preglednicima) i sadrži, 
 3. **`potpisano s eOI · <vrijeme>`** — manje od CN linije, vrijeme je u istom redu
    (za certifikate koji nisu eOI piše `potpisano lokalno`).
 
-Uvećani pečat: [primjer/potpis-primjer-zoom.png](primjer/potpis-primjer-zoom.png).
+Uvećani pečat: [primjer/potpis-primjer-zoom.png](primjer/potpis-primjer-zoom.png) ·
+provjera potpisa u GUI-ju: [primjer/gui-provjera.png](primjer/gui-provjera.png).
 Primjer računa za isprobavanje: [primjer/primjer-racun.pdf](primjer/primjer-racun.pdf)
 (ilustracija, svi podaci izmišljeni; pečat na snimci je stvarni izlaz alata).
 
@@ -311,6 +312,12 @@ dohvat OCSP/AIA. Potpis je i dalje valjan i provjerljiv lokalno.
 
 Ispiše potpisnika, izdavatelja, `intact/valid/trusted`, algoritam, pokrivenost dokumenta, vrijeme
 potpisa te ima li vremenski žig (i je li žig *trusted*).
+
+![Provjera potpisa u GUI-ju](primjer/gui-provjera.png)
+
+U GUI-ju je provjera stalno vidljiva: desno se ispiše **popis potpisa** (polje, potpisnik, vrijeme,
+`valjan` / `pouzdan` / `žig`) i u koje polje ide sljedeći potpis. Gumb **Provjeri potpis** ponovno
+provjeri dokument nakon promjena.
 
 **Stariji potpisi (npr. `adbe.pkcs7.sha1`)** — tipični za starije bankovne/izdavateljske dokumente —
 provjeravaju se posebnom, lokalnom provjerom: u tom profilu CMS sadrži **SHA-1 digest dokumenta**, a
