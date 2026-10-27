@@ -902,3 +902,23 @@ def test_legacy_potpis_kojeg_der_zavrsava_nulom(tmp_path):
     assert "warn" not in row and "error" not in row, row
     assert row.get("intact") is True, row       # dokument nije mijenjan
     assert row.get("valid") is False, row       # ali potpis je diran -> ne valja
+
+
+def test_potpisuje_i_pdf_koji_nije_strogo_valjan(tmp_path):
+    """Regresija: Pillow/ImageMagick PDF-ovi imaju xref '65536' i padali su na strogom citanju."""
+    from PIL import Image
+    from pyhanko.sign.signers.pdf_signer import PdfSignatureMetadata
+
+    src, out = tmp_path / "slika.pdf", tmp_path / "slika-signed.pdf"
+    Image.new("RGB", (600, 800), "white").save(src, "PDF")  # xref: 0000000000 65536 f
+    assert b"65536 f" in src.read_bytes()  # da test stvarno provjerava taj slucaj
+
+    signer = pp.soft_signer("NE-STROGI PDF", str(tmp_path / "root.pem"))
+    args = pp.build_parser().parse_args([str(src), "--out", str(out), "--offline"])
+    args.field = "Signature1"
+    box = pp._auto_box(pp._page_size(str(src), 1))
+    pp._sign_document(args, signer, PdfSignatureMetadata(field_name="Signature1",
+                      md_algorithm="sha256", signer_key_usage={"non_repudiation"}), box, None)
+
+    rows, _n, _note = pp.signature_summary(str(out), trust=str(tmp_path / "root.pem"))
+    assert rows and rows[0].get("intact") and rows[0].get("valid"), rows

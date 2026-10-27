@@ -667,7 +667,7 @@ def self_test(args) -> int:
 
     try:
         with open(out, "rb") as f:  # validacija mora unutar 'with' (cita byte range)
-            sig = list(PdfFileReader(f).embedded_signatures)[0]
+            sig = list(PdfFileReader(f, strict=False).embedded_signatures)[0]
             st = validate_pdf_signature(sig, ValidationContext(trust_roots=[a_cert],
                                                                allow_fetching=False))
             line(T("validacija"),
@@ -800,7 +800,7 @@ def _add_doc_timestamp(path: str, timestamper, trust: str) -> bool:
     part = path + ".part"
     try:
         with open(path, "rb") as inf, open(part, "wb") as outf:
-            writer = IncrementalPdfFileWriter(inf)
+            writer = IncrementalPdfFileWriter(inf, strict=False)
             PdfTimeStamper(timestamper, field_name="Timestamp").timestamp_pdf(
                 writer, md_algorithm="sha256",
                 validation_context=_vc(trust, fetching=True), output=outf,
@@ -824,7 +824,7 @@ def _run_sign(args, signer, meta, box, ts):
     part = args.out + ".part"
     try:
         with open(args.input, "rb") as inf, open(part, "wb") as outf:
-            writer = IncrementalPdfFileWriter(inf)
+            writer = IncrementalPdfFileWriter(inf, strict=False)
             stamp_style = None
             field_kwargs: dict = {}
             if box:
@@ -858,7 +858,7 @@ def _sig_fields(path: str) -> tuple[list[str], list[str]]:
     from pyhanko.sign.fields import enumerate_sig_fields
 
     with open(path, "rb") as f:
-        reader = PdfFileReader(f)
+        reader = PdfFileReader(f, strict=False)
         all_names = [name for name, _ref, _fld in enumerate_sig_fields(reader)]
         filled = [name for name, _ref, _fld in enumerate_sig_fields(reader, filled_status=True)]
     return all_names, filled
@@ -995,7 +995,7 @@ def cmd_sign(args) -> int:
             from pyhanko.pdf_utils.reader import PdfFileReader
 
             with open(args.out, "rb") as f:
-                has_dss = bool(PdfFileReader(f).root.get("/DSS"))
+                has_dss = bool(PdfFileReader(f, strict=False).root.get("/DSS"))
             print("  PAdES-LT:", T("DSS s dokazima o opozivu ugrađen") if has_dss
                   else T("DSS nije ugrađen (nema dostupnih OCSP/CRL podataka)"))
         except Exception:  # noqa: BLE001
@@ -1196,7 +1196,7 @@ def _raw_sig_objects(path: str) -> list[tuple[str, object]]:
                 walk(obj["/Kids"], depth + 1)
 
     with open(path, "rb") as f:
-        reader = PdfFileReader(f)
+        reader = PdfFileReader(f, strict=False)
         for page in reader.root["/Pages"].get("/Kids", []):
             for annot in page.get_object().get("/Annots", []) or []:
                 take(annot.get_object())
@@ -1334,7 +1334,7 @@ def signature_summary(path: str, trust: str = "AKDCARoot.pem") -> tuple[list[dic
     with _quiet_pyhanko():
         with open(path, "rb") as f:
             try:
-                sigs = list(PdfFileReader(f).embedded_signatures)
+                sigs = list(PdfFileReader(f, strict=False).embedded_signatures)
             except Exception as exc:  # noqa: BLE001
                 # pyHanko ne podrzava npr. adbe.pkcs7.sha1 i onda pukne vec pri citanju
                 raw = str(exc)
@@ -1471,7 +1471,7 @@ def cmd_verify(args) -> int:
     path = args.input if args.cmd == "verify" else args.out
     with _quiet_pyhanko():
         with open(path, "rb") as f:
-            sigs = list(PdfFileReader(f).embedded_signatures)
+            sigs = list(PdfFileReader(f, strict=False).embedded_signatures)
     legacy = []
     with _quiet_pyhanko():
         for fld, obj in _raw_sig_objects(path):
@@ -1486,7 +1486,7 @@ def cmd_verify(args) -> int:
         return 1
     if sigs:  # AKD trust gradimo samo ako ima normalnih potpisa (legacy ne treba middleware)
         with _quiet_pyhanko(), open(path, "rb") as f:
-            sigs = list(PdfFileReader(f).embedded_signatures)
+            sigs = list(PdfFileReader(f, strict=False).embedded_signatures)
             vc = _vc(args.trust)  # potpisnik: samo AKD korijeni
             ts_vc = _vc(args.trust, fetching=True)  # TSA lanac: + sistemski korijeni
             for sig in sigs:

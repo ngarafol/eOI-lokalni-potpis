@@ -163,9 +163,9 @@ Pečat je **vektorski PDF tekst** (isti izgled u svim preglednicima) i sadrži, 
 3. **`potpisano s eOI · <vrijeme>`** — manje od CN linije, vrijeme je u istom redu
    (za certifikate koji nisu eOI piše `potpisano lokalno`).
 
-Engleska varijanta sučelja: [primjer/potpis-primjer-en.png](primjer/potpis-primjer-en.png) ·
-uvećani pečat: [primjer/potpis-primjer-zoom.png](primjer/potpis-primjer-zoom.png).
-Sintetički dokument za testiranje: [primjer/primjer-racun.pdf](primjer/primjer-racun.pdf).
+Uvećani pečat: [primjer/potpis-primjer-zoom.png](primjer/potpis-primjer-zoom.png).
+Primjer računa za isprobavanje: [primjer/primjer-racun.pdf](primjer/primjer-racun.pdf)
+(ilustracija, svi podaci izmišljeni; pečat na snimci je stvarni izlaz alata).
 
 Snimke se generiraju **iz koda** (pa ne mogu odstupiti od njega):
 
