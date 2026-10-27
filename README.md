@@ -26,15 +26,17 @@ modula. Dokument i PIN **ne izlaze s računala** — nema clouda, nema uploada, 
 
 ## Čemu služi
 
-Bez ovog alata potpis PDF-a eOI karticom traži ili komercijalni servis (dokument ode u cloud)
-ili ručno petljanje s više programa. S ovim alatom, u jednoj naredbi (ili kroz GUI) dobiješ:
+Bez ovog alata potpis PDF-a eOI karticom traži ili komercijalni servis (dokument prolazi kroz
+njihov sustav) ili ručno petljanje s više programa. S ovim alatom, u jednoj naredbi (ili kroz GUI) dobiješ:
 
 - PDF potpisan **kvalificiranim certifikatom s tvoje kartice** — ključ i PIN ostaju kod tebe;
 - **vidljivi pečat** (ime, `država · OIB`, `potpisano s eOI · vrijeme`) — vektorski, oštar na
   svakom zoomu, ~2 KB;
 - **vremenski žig** (RFC 3161) i, kad uvjeti dopuštaju, **PAdES-LT / LTA**;
 - **provjeru** potpisa — i svojih i tuđih (uključujući starije bankovne `adbe.pkcs7.sha1`);
-- sve to **offline** ako želiš (`--offline`) — nijedan bajt ne izlazi s računala.
+- sve to **offline** ako želiš (`--offline`) — nijedan bajt ne izlazi s računala;
+- **dokument ne prolazi ni kroz kakav servis** — ni na potpis, ni na pohranu (kod udaljenog
+  potpisivanja dokument se uploada servisu i briše odmah nakon potpisa, vidi usporedbu dolje).
 
 **Kada NE koristiti:** s telefona, bez kartice/čitača, ili kad ti treba servis s podrškom i
 arhivom — za to postoji Certilia (vidi dolje). Alat je neslužben, nije certificiran proizvod i
@@ -43,7 +45,7 @@ nije povezan s AKD-om; koristi njihov middleware koji sam instaliraš.
 ## Usporedba s Certilia (udaljeno potpisivanje)
 
 Oba načina daju **istu razinu potpisa (QES)** — razlika je *gdje* potpis nastaje, *kome* treba
-mreža i *tko* drži ključ.
+mreža, *tko* drži ključ i *prolazi li dokument kroz servis*.
 
 | | **Ovaj alat** (lokalno) | **Certilia** (udaljeno) |
 |---|---|---|
@@ -52,10 +54,18 @@ mreža i *tko* drži ključ.
 | Što odobrava svaki potpis | **PIN na kartici** | autentikacija prema servisu |
 | Što treba za rad | eOI kartica, čitač, AKD middleware | aktivacija/račun i internet; kartica ne mora biti u čitaču |
 | Radi offline | **da** (`--offline`) | ne |
+| Što servis dobije | **ništa** — potpis nastaje na kartici | dokument se uploada radi potpisa; potpisuje se **samo hash**, a dokument se **odmah po potpisivanju trajno briše** |
+| Što ostaje kod njih | ništa (TSA-u ide samo hash, ako uključiš žig) | zapis o potpisu (broj zapisa + URL za provjeru), **ne dokument** |
 | Vidljivi pečat | da, vektorski i prilagodljiv | da, njihov izgled |
 | Vremenski žig / LTV | opcionalno (javni TSA ili AKD QTSA) | dio usluge |
 | Cijena / licenca | besplatno, MIT | komercijalna usluga |
 | Kad je bolje | privatnost, offline rad, često potpisivanje vlastitom karticom | nemaš karticu/čitač pri ruci, potpisuješ s telefona, ili želiš servis s podrškom |
+
+> **Provjereno u AKD-ovim uvjetima** ([AKD ePotpis — Opći uvjeti](https://esign.certilia.com/media/ePotpis-opci-uvjeti.pdf),
+> t. 4.6.2–4.6.3, provjereno 27.10.2026.): *„e-Usluga potpisuje samo sažetak (HASH) dokumenta…"*
+> i *„e-Usluga ne čuva korisničke dokumente nakon potpisivanja, te ih odmah po potpisivanju trajno
+> briše."* Dakle i kod udaljenog potpisivanja **dokument se ne pohranjuje** trajno — ali, za razliku
+> od ovog alata, **prolazi kroz njihov servis** dok se ne potpiše.
 
 > **Kvalificiranost potpisa ne dolazi od alata** — dolazi od certifikata i od toga što je ključ na
 > QSCD-u (kartici). Alat je samo sučelje prema kartici; zato je razina ista kao kod Certilie.
